@@ -19,6 +19,7 @@ char message[BUFFLEN];
 WSADATA wsa;
 
 int num_clients;
+std::mutex m;
 bool is_client_connected[MAX_CLIENTS];
 std::thread client_threads[MAX_CLIENTS];
 struct sockaddr_in client_addresses[MAX_CLIENTS];
@@ -60,6 +61,7 @@ const sockaddr_in& GetClientAddress(int clientIndex)
 
 void HandleClientSockets(const struct sockaddr_in& address, char* buff)
 {
+	auto lock = std::unique_lock<std::mutex>(m);
 	//print details of the client/peer and the data received
 	printf("Received packet from %s:%d\n", inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port));
 	printf("Data: %s\n", buff);
@@ -70,6 +72,7 @@ void HandleClientSockets(const struct sockaddr_in& address, char* buff)
 		printf("sendto() failed with error code : %d", WSAGetLastError());
 		exit(EXIT_FAILURE);
 	}
+	lock.unlock();
 }
 
 int main()

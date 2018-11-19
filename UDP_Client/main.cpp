@@ -7,7 +7,7 @@
 
 #pragma comment(lib,"ws2_32.lib") //Winsock Library
 
-#define SERVER "192.168.1.13"	//ip address of udp server
+#define SERVER "127.0.0.1"	//ip address of udp server
 #define BUFFLEN 512	//Max length of buffer
 #define PORT 8888	//The port on which to listen for incoming data
 
@@ -18,13 +18,13 @@ char buff[BUFFLEN];
 char message[BUFFLEN];
 WSADATA wsa;
 
-std::mutex m;
+std::mutex listen_lock;
+std::mutex message_lock;
 bool is_listening = false;
 std::thread* listen_thread;
 
 void ListenForResponse()
 {
-	auto lock = std::unique_lock<std::mutex>(m);
 
 	//clear the buffer by filling null, it might have previously received data
 	memset(buff, '\0', BUFFLEN);
@@ -36,8 +36,9 @@ void ListenForResponse()
 	}
 
 	puts(buff);
-	is_listening = false;
 
+	auto lock = std::unique_lock<std::mutex>(listen_lock);
+	is_listening = false;
 	lock.unlock();
 }
 
@@ -72,13 +73,17 @@ int main(void)
 	auto io_thread = std::thread([&] {
 		while (!quit)
 		{
-			auto lock = std::unique_lock<std::mutex>(m);
+			//auto lock = std::unique_lock<std::mutex>(io_lock);
 			printf("Enter message : ");
 			gets_s(io_buff);
 			if (strcmp(io_buff, "quit"))
 			{
 				quit == true;
 			}
+			//lock.unlock();
+
+			auto lock = std::unique_lock<std::mutex>(message_lock);
+			memcpy(message, io_buff, sizeof(char)*BUFFLEN);
 			lock.unlock();
 		}
 	});
@@ -87,18 +92,18 @@ int main(void)
 	while (1)
 	{
 		//send the message
-		auto lock = std::unique_lock<std::mutex>(m);
+		auto lock = std::unique_lock<std::mutex>(message_lock);
 		if (sendto(sock, message, strlen(message), 0, (struct sockaddr *) &si_other, slen) == SOCKET_ERROR)
 		{
 			printf("sendto() failed with error code : %d", WSAGetLastError());
 			exit(EXIT_FAILURE);
 		}
-		memset(io_buff, '\0', BUFFLEN); // Reset io buffer so we don't send the same message more than once
+		memset(message, '\0', BUFFLEN); // Reset io buffer so we don't send the same message more than once
 		lock.unlock();
 
 		if (!is_listening)
 		{
-			lock.lock();
+			auto lock = std::unique_lock<std::mutex>(listen_lock);
 			is_listening = true;
 			lock.unlock();
 			//receive a reply and print it
